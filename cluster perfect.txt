@@ -1,0 +1,272 @@
+E:
+cd Python_all
+
+
+python
+
+import lightgbm as lgb
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import shap
+from sklearn.cluster import DBSCAN
+from sklearn.datasets import make_classification
+from sklearn.metrics import accuracy_score
+from umap import UMAP
+
+# work around for skrules import error
+import six
+import sys
+sys.modules['sklearn.externals.six'] = six
+import os
+import cv2
+import gc
+import random
+from PIL import Image
+import xgboost as xgb
+from xgboost import XGBClassifier
+from sklearn.model_selection import train_test_split
+
+
+
+
+path = r"C:\Users\user\Desktop\face\UTKFace"
+images = []
+age = []
+gender = []
+for img in os.listdir(path):
+  ages = img.split("_")[0]
+  genders = img.split("_")[1]
+  img = cv2.imread(str(path)+"/"+str(img))
+  img = cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
+  img=cv2.resize(img,(100,100))
+  images.append(np.array(img.reshape(-1)))
+  age.append(np.array(ages))
+  gender.append(np.array(genders))
+
+
+
+age = np.array(age,dtype=np.int64)
+gender = np.array(gender,dtype=np.uint64)
+
+x_train_gender, x_test_gender, y_train_gender, y_test_gender = train_test_split(images, gender, test_size=0.25,stratify=gender, random_state=random.randint(1,4000000000))
+
+
+shap.initjs()
+
+n_clusters_per_class = 1
+seed = 100
+
+# for plotting
+alpha = 0.5
+size = 15
+
+np.random.seed(seed)
+
+
+y=y_train_gender
+X=x_train_gender
+
+X=pd.DataFrame(X)
+y=y.tolist()
+
+
+# fit GBT model to all data
+m = lgb.LGBMClassifier(random_state=seed)
+m.fit(X, y)
+
+
+# check model accuracy
+y_pred = m.predict(X)
+acc = accuracy_score(y, y_pred)
+acc
+
+
+x_test_gender=pd.DataFrame(x_test_gender)
+y_test_gender=y_test_gender.tolist()
+
+
+test_pred = m.predict(x_test_gender)
+acc = accuracy_score(y_test_gender, test_pred)
+acc
+
+
+# compute SHAP values using all data
+explainer = shap.Explainer(m, random_state=seed)
+shap_values = explainer(X)
+sv = shap_values.values[:, :, 1]
+
+# for class colours in scatter plots
+c = ["#d45087"] * len(y) 
+ 
+for i in range(len(y)):
+    if y[i] == 1:
+        c[i] = "#003f5c"  
+		
+
+		
+		
+		
+		
+		
+X_2d = UMAP(
+    n_components=2,
+    n_neighbors=10,
+    min_dist=0,
+    random_state=seed,
+).fit_transform(X)
+
+
+fig, ax = plt.subplots(figsize=(5.5, 6))
+sns.regplot(
+    x="A",
+    y="B",
+    data=pd.DataFrame(X_2d, columns=["A", "B"]),
+    fit_reg=False,
+    ax=ax,
+    scatter_kws={"alpha": alpha, "s": size, "color": c},
+)
+
+# equalise axes and hacky solution for legend
+ax.axis("equal")
+x, y = ax.get_xlim(), ax.get_ylim()
+ax.scatter([99], [99], label="1", alpha=0.7)
+ax.scatter([99], [99], label="0", alpha=0.7)
+ax.legend(title="$y$", title_fontsize=14)
+ax.set_xlim(x)
+ax.set_ylim(y)
+
+ax.set_xlabel("")
+ax.set_ylabel("")
+ax.set_xticks([])
+ax.set_yticks([])
+
+fig.suptitle(
+    "2D embedding of raw variable values,\ncoloured by $y$",
+    fontsize=20,
+)
+fig.tight_layout()
+
+
+fig.savefig(r"C:\Users\user\Documents\pimage\img1", dpi=75)
+
+
+
+
+# compute 2D embedding of SHAP variable values using UMAP
+sv_2d = UMAP(
+    n_components=2,
+    n_neighbors=10,
+    min_dist=0,
+    random_state=seed,
+).fit_transform(sv)
+
+
+fig, ax = plt.subplots(figsize=(5.5, 6))
+sns.regplot(
+    x="A",
+    y="B",
+    data=pd.DataFrame(sv_2d, columns=["A", "B"]),
+    fit_reg=False,
+    ax=ax,
+    scatter_kws={"alpha": alpha, "s": size, "color": c},
+)
+
+# equalise axes and hacky solution for legend
+ax.axis("equal")
+x, y = ax.get_xlim(), ax.get_ylim()
+ax.scatter([99], [99], label="1", alpha=0.7)
+ax.scatter([99], [99], label="0", alpha=0.7)
+ax.legend(title="$y$", title_fontsize=14)
+ax.set_xlim(x)
+ax.set_ylim(y)
+
+ax.set_xlabel("")
+ax.set_ylabel("")
+ax.set_xticks([])
+ax.set_yticks([])
+
+fig.suptitle(
+    "2D embedding of SHAP values,\ncoloured by $y$",
+    fontsize=20,
+)
+fig.tight_layout()
+
+fig.savefig(r"C:\Users\user\Documents\pimage\img2", dpi=75)
+
+
+y=y_train_gender.tolist()
+
+# fit GBT model to all data
+m = lgb.LGBMClassifier(random_state=seed)
+m.fit(X, y)
+
+
+
+explainer = shap.Explainer(m, random_state=seed)
+shap_values = explainer(X)
+sv = shap_values.values[:, :, 1]
+
+shap_values = explainer(x_test_gender)
+sv2 = shap_values.values[:, :, 1]
+
+sv_2d = UMAP(
+    n_components=2,
+    n_neighbors=10,
+    min_dist=0,
+    random_state=seed,
+)
+
+sv_2d.fit(sv)
+train_dat=sv_2d.transform(sv)
+test_dat=sv_2d.transform(sv2)
+
+# fit GBT model to all data
+m = XGBClassifier()
+m.fit(train_dat, y_train_gender)
+
+# check model accuracy
+y_pred = m.predict(test_dat)
+test_label=np.array(y_test_gender)
+acc = accuracy_score(test_label, y_pred)
+acc
+
+
+c = ["#d45087"] * len(y_test_gender)
+
+for i in range(len(y_test_gender)):
+    if y_test_gender[i] == 1:
+        c[i] = "#003f5c"  
+
+fig, ax = plt.subplots(figsize=(5.5, 6))
+sns.regplot(
+    x="A",
+    y="B",
+    data=pd.DataFrame(test_dat, columns=["A", "B"]),
+    fit_reg=False,
+    ax=ax,
+    scatter_kws={"alpha": alpha, "s": size, "color": c},
+)
+
+# equalise axes and hacky solution for legend
+ax.axis("equal")
+x, y = ax.get_xlim(), ax.get_ylim()
+ax.scatter([99], [99], label="1", alpha=0.7)
+ax.scatter([99], [99], label="0", alpha=0.7)
+ax.legend(title="$y$", title_fontsize=14)
+ax.set_xlim(x)
+ax.set_ylim(y)
+
+ax.set_xlabel("")
+ax.set_ylabel("")
+ax.set_xticks([])
+ax.set_yticks([])
+
+fig.suptitle(
+    "2D embedding of SHAP values,\ncoloured by $y$",
+    fontsize=20,
+)
+fig.tight_layout()
+
+fig.savefig(r"C:\Users\user\Documents\pimage\img3", dpi=75)
